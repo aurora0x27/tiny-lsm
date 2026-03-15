@@ -46,6 +46,33 @@ xmake project -k compile_commands
 xmake install --root lsm_shared
 ```
 
+# 🗂️ WiscKey: Value Separation
+
+Tiny-LSM supports **WiscKey-style key-value separation** to reduce write amplification for large values. When enabled, values exceeding a configurable threshold are written to a separate append-only **Value Log (VLog)** file instead of being inlined in SST blocks. SST blocks only store a compact 12-byte reference `[vlog_offset: uint64][value_size: uint32]`, keeping the sorted index small and compaction cheap.
+
+```
+put(key, value)
+  │
+  ├─ value.size() < threshold ──→ inline in SST (classic LSM)
+  │
+  └─ value.size() >= threshold ─→ append to vlog.data → store (offset, size) in SST
+```
+
+Each VLog record is CRC32-checksummed for integrity:
+```
+[key_len : uint16][key : N bytes][val_len : uint32][value : M bytes][crc32 : uint32]
+```
+
+**Enable via `config.toml`:**
+```toml
+[lsm.wisckey]
+# Values >= this threshold (bytes) are separated into VLog.
+# Set to 0 to disable WiscKey (default).
+WISCKEY_VALUE_THRESHOLD = 1024
+```
+
+Setting `WISCKEY_VALUE_THRESHOLD = 0` disables value separation and falls back to standard LSM behavior.
+
 # 🛠️ Usage
 
 ## Use as a library
@@ -162,6 +189,11 @@ The performance of the wrapper redis server is not very good, but it is still fa
   - [x] Query
   - [x] Range Query
   - [x] Compact
+- [x] WiscKey (Value Separation)
+  - [x] VLog append-only file
+  - [x] Value threshold configuration
+  - [x] CRC32 integrity check
+  - [x] Transparent read/write via SST reference
 - [x] Wal
   - [x] Sync Wal
   - [ ] Async Wal
